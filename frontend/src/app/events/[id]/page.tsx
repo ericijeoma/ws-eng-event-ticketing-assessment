@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Event, SeatTier } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
-import { eventsAPI, bookingsAPI, promoCodesAPI } from "@/lib/api";
+import { eventsAPI, bookingsAPI, promoCodesAPI, waitlistAPI } from "@/lib/api";
 import { formatDate, formatTime, formatCurrency } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Alert } from "@/components/ui/Alert";
 import { Spinner } from "@/components/ui/Spinner";
+import Image from "next/image"
 
 export default function EventPage() {
   const params = useParams();
@@ -31,6 +32,12 @@ export default function EventPage() {
   const [promoError, setPromoError] = useState("");
   const [isValidatingPromo, setIsValidatingPromo] = useState(false);
 
+  // Waitlist state
+  const [waitlistPosition, setWaitlistPosition] = useState<number | null>(null);
+  const [isOnWaitlist, setIsOnWaitlist] = useState(false);
+  const [isJoiningWaitlist, setIsJoiningWaitlist] = useState(false);
+  const [waitlistMessage, setWaitlistMessage] = useState("");
+
   useEffect(() => {
     eventsAPI
       .get(params.id as string)
@@ -38,6 +45,26 @@ export default function EventPage() {
       .catch((err) => setError(err.message))
       .finally(() => setIsLoading(false));
   }, [params.id]);
+
+  // If logged in and event is loaded, fetch current waitlist position (404 => not on waitlist)
+  useEffect(() => {
+    if (!event || !user || !token) return;
+
+    waitlistAPI
+      .getPosition(token, params.id as string)
+      .then((res) => {
+        setIsOnWaitlist(true);
+        setWaitlistPosition(res.data.position);
+      })
+      .catch((err) => {
+        const msg = err instanceof Error ? err.message : "";
+        if (msg.toLowerCase().includes("not on waitlist")) {
+          setIsOnWaitlist(false);
+          setWaitlistPosition(null);
+        }
+        // silently ignore other errors
+      });
+  }, [event, user, token, params.id]);
 
   const handlePurchase = () => {
     if (!user) {
@@ -86,6 +113,42 @@ export default function EventPage() {
     }
   };
 
+  const handleJoinWaitlist = async () => {
+    if (!user) {
+      router.push(`/login?callbackUrl=/events/${params.id}`);
+      return;
+    }
+    if (!token) return;
+    setIsJoiningWaitlist(true);
+    setWaitlistMessage("");
+    try {
+      const res = await waitlistAPI.join(token, params.id as string);
+      setIsOnWaitlist(true);
+      setWaitlistPosition(res.data.position);
+      setWaitlistMessage(`You have joined the waitlist. Position #${res.data.position}`);
+    } catch (err) {
+      setWaitlistMessage(err instanceof Error ? err.message : "Failed to join waitlist");
+    } finally {
+      setIsJoiningWaitlist(false);
+    }
+  };
+
+  const handleLeaveWaitlist = async () => {
+    if (!token) return;
+    setIsJoiningWaitlist(true);
+    setWaitlistMessage("");
+    try {
+      await waitlistAPI.leave(token, params.id as string);
+      setIsOnWaitlist(false);
+      setWaitlistPosition(null);
+      setWaitlistMessage("You have left the waitlist");
+    } catch (err) {
+      setWaitlistMessage(err instanceof Error ? err.message : "Failed to leave waitlist");
+    } finally {
+      setIsJoiningWaitlist(false);
+    }
+  };
+
   const getDisplayPrice = () => {
     const basePrice = selectedTier ? selectedTier.price : (event?.price || 0);
     if (!promoDiscount) return basePrice;
@@ -110,6 +173,8 @@ export default function EventPage() {
     : event.soldCount >= event.capacity;
   const isPastEvent = new Date(event.date) < new Date();
   const isDisabled = isSoldOut || isCancelled || isPastEvent;
+  // Event-level sold out for waitlist logic
+  const eventSoldOut = event.soldCount >= event.capacity;
 
   return (
     <div className="container py-8">
@@ -117,7 +182,7 @@ export default function EventPage() {
         <div className="lg:col-span-2 space-y-6">
           <div className="aspect-video bg-gray-200 rounded-lg overflow-hidden relative">
             {event.imageUrl ? (
-              <img src={event.imageUrl} alt={event.name} className="w-full h-full object-cover" />
+             <Image src={event.imageUrl} alt={event.name} fill className="object-cover" />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
                 <svg className="h-20 w-20 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -273,6 +338,31 @@ export default function EventPage() {
               <Button className="w-full" size="lg" disabled={isDisabled} onClick={handlePurchase}>
                 {isCancelled ? "Event Cancelled" : isSoldOut ? "Sold Out" : isPastEvent ? "Event Ended" : "Buy Ticket"}
               </Button>
+
+              {eventSoldOut && !isCancelled && !isPastEvent && (
+                <div className="space-y-2 text-center">
+                  {!isOnWaitlist ? (
+                    <>
+                      <p className="text-sm text-gray-600">This event is sold out</p>
+                      <Button className="w-full" onClick={handleJoinWaitlist} isLoading={isJoiningWaitlist} disabled={isJoiningWaitlist}>
+                        Join Waitlist
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm text-gray-700">
+                        You are on the waitlist — Position #{waitlistPosition ?? "-"}
+                      </p>
+                      <Button className="w-full" variant="secondary" onClick={handleLeaveWaitlist} isLoading={isJoiningWaitlist} disabled={isJoiningWaitlist}>
+                        Leave Waitlist
+                      </Button>
+                    </>
+                  )}
+                  {waitlistMessage && (
+                    <p className={`text-sm ${isOnWaitlist ? "text-green-600" : "text-gray-600"}`}>{waitlistMessage}</p>
+                  )}
+                </div>
+              )}
 
               {isPastEvent && !isCancelled && <p className="text-center text-sm text-gray-500">This event has ended</p>}
             </CardContent>
