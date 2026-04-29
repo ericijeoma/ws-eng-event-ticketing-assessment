@@ -173,7 +173,7 @@ router.get("/:id/refund-preview", authenticate, async (req, res) => {
       booking.pricePaid,
       new Date(booking.event.date),
       booking.event.refundPolicy,
-      booking.event.serviceFeePercent
+      booking.event.serviceFeePercent,
     );
 
     res.json({
@@ -292,7 +292,7 @@ router.post("/", authenticate, async (req, res) => {
         // Check minimum purchase amount
         if (promo.minPurchaseAmount && ticketPrice < promo.minPurchaseAmount) {
           throw new Error(
-            `MIN_PURCHASE:Minimum purchase of $${promo.minPurchaseAmount.toFixed(2)} required for this code`
+            `MIN_PURCHASE:Minimum purchase of $${promo.minPurchaseAmount.toFixed(2)} required for this code`,
           );
         }
 
@@ -467,7 +467,7 @@ router.delete("/:id", authenticate, async (req, res) => {
         throw new Error(
           booking.status === "CANCELLED"
             ? "ALREADY_CANCELLED:This booking has already been cancelled"
-            : "INVALID_STATUS:Only confirmed bookings can be cancelled"
+            : "INVALID_STATUS:Only confirmed bookings can be cancelled",
         );
       }
 
@@ -476,7 +476,7 @@ router.delete("/:id", authenticate, async (req, res) => {
         booking.pricePaid,
         new Date(booking.event.date),
         booking.event.refundPolicy,
-        booking.event.serviceFeePercent
+        booking.event.serviceFeePercent,
       );
 
       if (!refund.canCancel) {
