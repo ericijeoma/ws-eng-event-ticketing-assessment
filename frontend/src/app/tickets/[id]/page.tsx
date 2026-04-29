@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, FormEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Booking } from "@/types";
 import { useAuth } from "@/contexts/AuthContext";
@@ -10,6 +10,8 @@ import { Card, CardContent } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { Alert } from "@/components/ui/Alert";
+import { Input } from "@/components/ui/Input";
+import Image from "next/image";
 
 export default function TicketPage() {
   const params = useParams();
@@ -20,6 +22,12 @@ export default function TicketPage() {
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // Transfer form state
+  const [transferEmail, setTransferEmail] = useState("");
+  const [isTransferring, setIsTransferring] = useState(false);
+  const [transferError, setTransferError] = useState("");
+  const [transferSuccess, setTransferSuccess] = useState("");
 
   useEffect(() => {
     if (authLoading) return;
@@ -39,6 +47,27 @@ export default function TicketPage() {
       .catch((err) => setError(err.message))
       .finally(() => setIsLoading(false));
   }, [user, token, authLoading, router, params.id]);
+
+  const handleTransfer = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!booking || !token) return;
+
+    setTransferError("");
+    setTransferSuccess("");
+    setIsTransferring(true);
+
+    try {
+      await bookingsAPI.transfer(token, booking.id, transferEmail);
+      setTransferSuccess("Ticket transferred successfully");
+      setTimeout(() => {
+        router.push("/bookings");
+      }, 2000);
+    } catch (err:unknown) {
+      setTransferError(err instanceof Error ? err.message : "Failed to transfer ticket");
+    } finally {
+      setIsTransferring(false);
+    }
+  };
 
   if (authLoading || isLoading) {
     return <div className="flex items-center justify-center min-h-[50vh]"><Spinner size="lg" /></div>;
@@ -68,7 +97,7 @@ export default function TicketPage() {
 
             {qrCode && (
               <div className="flex justify-center">
-                <img src={qrCode} alt="Ticket QR Code" className="w-64 h-64" />
+                <Image src={qrCode} alt="Ticket QR Code" width={256} height={256} />
               </div>
             )}
 
@@ -106,6 +135,27 @@ export default function TicketPage() {
                 <span className="font-mono font-medium">{booking.ticketCode.slice(0, 8).toUpperCase()}</span>
               </div>
             </div>
+
+            {/* Transfer Ticket section — only renders for CONFIRMED bookings */}
+            {booking.status === "CONFIRMED" && (
+              <div className="pt-2 text-left w-full">
+                <h2 className="text-xl font-semibold text-gray-900">Transfer Ticket</h2>
+                <form onSubmit={handleTransfer} className="mt-3 space-y-3">
+                  <Input
+                    type="email"
+                    placeholder="Recipient's email address"
+                    value={transferEmail}
+                    onChange={(e) => setTransferEmail(e.target.value)}
+                    required
+                  />
+                  <Button type="submit" className="w-full" disabled={isTransferring}>
+                    {isTransferring ? "Transferring..." : "Transfer Ticket"}
+                  </Button>
+                  {transferError && <p className="text-red-600 text-sm">{transferError}</p>}
+                  {transferSuccess && <Alert variant="success">{transferSuccess}</Alert>}
+                </form>
+              </div>
+            )}
 
             <div className="pt-4 space-y-3">
               <Button className="w-full" onClick={() => qrCode && window.open(qrCode, "_blank")}>
