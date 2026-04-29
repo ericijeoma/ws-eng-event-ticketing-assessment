@@ -7,7 +7,7 @@ import checkinRoutes from "./routes/checkin.js";
 import dashboardRoutes from "./routes/dashboard.js";
 import tierRoutes from "./routes/tiers.js";
 import promoCodeRoutes from "./routes/promoCodes.js";
-import waitlistRoutes from "./routes/waitlist.js";
+import waitlistRouter from "./routes/waitlist.js";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -32,7 +32,7 @@ app.use("/api/events", promoCodeRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/checkin", checkinRoutes);
 app.use("/api/dashboard", dashboardRoutes);
-app.use("/api/waitlist", waitlistRoutes);
+app.use("/api/events", waitlistRouter);
 
 // 404 handler
 app.use((req, res) => {
