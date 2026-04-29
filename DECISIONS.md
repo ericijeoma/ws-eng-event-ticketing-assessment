@@ -103,4 +103,8 @@ feature — broken capacity accounting silently corrupts both stories.
    `submission/`.
 
 
-find frontend/src -type f -name "*.tsx" | xargs grep -l -i "transfer\|qr\|ticketCode" 2>/dev/null
+git add submission/
+git add DECISIONS.md
+git add -A
+git commit -m "submission: all acceptance tests with screenshots"
+npm run submit a0Bfv00000B45HLEAZ
