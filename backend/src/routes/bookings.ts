@@ -5,6 +5,7 @@ import { authenticate } from "../middleware/auth.js";
 import { generateTicketCode, generateQRData, generateQRCodeDataURL } from "../lib/qr.js";
 import { calculateRefund } from "../lib/refund.js";
 import { incrementCapacity, decrementCapacity } from "../lib/capacity.js";
+import { transferBooking } from "../lib/transfer.js";
 
 // Booking ownership changes: see lib/transfer.ts for the cancel+create utility
 // used by organizer reassignment. For attendee-initiated transfers, consider
@@ -613,6 +614,101 @@ router.get("/:id/qr", authenticate, async (req, res) => {
       success: false,
       error: "INTERNAL_ERROR",
       message: "Failed to generate QR code",
+    });
+  }
+});
+
+/**
+ * POST /api/bookings/:id/transfer - Transfer a booking to another user
+ * Requires authentication. Verifies ownership, looks up recipient by email,
+ * prevents self-transfer, performs transfer within a transaction, and returns
+ * the newly created booking for the recipient.
+ */
+router.post("/:id/transfer", authenticate, async (req, res) => {
+  try {
+    const booking = await prisma.booking.findUnique({
+      where: { id: req.params.id as string },
+    });
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        error: "NOT_FOUND",
+        message: "Booking not found",
+      });
+    }
+
+    if (booking.userId !== req.user!.userId) {
+      return res.status(403).json({
+        success: false,
+        error: "FORBIDDEN",
+        message: "You can only transfer your own bookings",
+      });
+    }
+
+    const { recipientEmail } = req.body as { recipientEmail?: string };
+
+    if (!recipientEmail || typeof recipientEmail !== "string") {
+      return res.status(400).json({
+        success: false,
+        error: "VALIDATION_ERROR",
+        message: "recipientEmail is required",
+      });
+    }
+
+    const recipient = await prisma.user.findUnique({
+      where: { email: recipientEmail },
+    });
+
+    if (!recipient) {
+      return res.status(404).json({
+        success: false,
+        error: "NOT_FOUND",
+        message: "Recipient user not found",
+      });
+    }
+
+    if (recipient.id === req.user!.userId) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_RECIPIENT",
+        message: "You cannot transfer a booking to yourself",
+      });
+    }
+
+    const newBooking = await prisma.$transaction(async (tx) => {
+      return transferBooking(tx, booking.id, recipient.id);
+    });
+
+    return res.status(201).json({
+      success: true,
+      data: newBooking,
+      message: "Booking transferred successfully",
+    });
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error("Error transferring booking:", err);
+
+    if (err.message?.startsWith("NOT_FOUND:")) {
+      return res.status(404).json({
+        success: false,
+        error: "NOT_FOUND",
+        message: err.message.split(":")[1],
+      });
+    }
+
+    if (err.message?.startsWith("INVALID_STATUS:")) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_STATUS",
+        message: err.message.split(":")[1],
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      error: "INTERNAL_ERROR",
+      message: "Failed to transfer booking",
     });
   }
 });
