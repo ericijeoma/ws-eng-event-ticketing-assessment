@@ -1,4 +1,5 @@
 import { generateTicketCode, generateQRData } from "./qr.js";
+import { decrementCapacity, incrementCapacity } from "./capacity.js";
 
 /**
  * Transfers a booking from one user to another by cancelling the original
@@ -57,34 +58,14 @@ export async function transferBooking(
   // 3. Adjust capacity counters (decrement for cancel, re-increment for new booking)
   // This two-step approach ensures the capacity logic stays consistent with
   // the rest of the booking system — cancel always decrements, create always increments.
-  await tx.event.update({
-    where: { id: booking.eventId },
-    data: { soldCount: { decrement: 1 } },
-  });
-
-  if (booking.seatTierId) {
-    await tx.seatTier.update({
-      where: { id: booking.seatTierId },
-      data: { soldCount: { decrement: 1 } },
-    });
-  }
+  await decrementCapacity(tx, booking);
 
   // 4. Create new booking for recipient with fresh ticket credentials
   const ticketCode = generateTicketCode();
   const qrCodeData = generateQRData(ticketCode);
 
   // Re-increment capacity
-  await tx.event.update({
-    where: { id: booking.eventId },
-    data: { soldCount: { increment: 1 } },
-  });
-
-  if (booking.seatTierId) {
-    await tx.seatTier.update({
-      where: { id: booking.seatTierId },
-      data: { soldCount: { increment: 1 } },
-    });
-  }
+  await incrementCapacity(tx, booking.eventId, booking.seatTierId);
 
   const newBooking = await tx.booking.create({
     data: {
